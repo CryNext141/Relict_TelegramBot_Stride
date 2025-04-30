@@ -73,7 +73,8 @@ namespace Relict_TelegramBot_Stride.BotControllers
                     await HandleCallback(cb, ct);
                     break;
 
-                case { Message: { } msg } when _reports.ContainsKey(msg.Chat.Id):
+                case { Message: { } msg } when _reports.ContainsKey(msg.Chat.Id) &&
+                                       (msg.Type == MessageType.Text || msg.Type == MessageType.Contact || msg.Type == MessageType.Location):
                     await HandleWizardMessage(msg, ct);
                     break;
             }
@@ -149,24 +150,49 @@ namespace Relict_TelegramBot_Stride.BotControllers
             switch (sess.Step)
             {
                 case ReportStep.AskName:
-                    sess.CitizenName = msg.Text;
+                    if (msg.Type != MessageType.Text || string.IsNullOrWhiteSpace(msg.Text))
+                    {
+                        await Client.SendMessage(chatId, "Ім'я не може бути порожнім. Будь ласка, введіть ваше ім’я:", replyMarkup: InlineMenus.BackCancel(), cancellationToken: ct);
+                        return;
+                    }
+                    sess.CitizenName = msg.Text.Trim();
                     sess.History.Push(ReportStep.AskName);
                     sess.Step = ReportStep.AskPhone;
                     await AskPhone(chatId, ct);
                     break;
 
                 case ReportStep.AskPhone:
+                    string? phoneNumber = null;
                     if (msg.Contact is not null)
-                        sess.CitizenContactPhone = msg.Contact.PhoneNumber;
-                    else
-                        sess.CitizenContactPhone = msg.Text;
+                    {
+                        phoneNumber = msg.Contact.PhoneNumber;
+                    }
+                    else if (msg.Type == MessageType.Text && !string.IsNullOrWhiteSpace(msg.Text))
+                    {
+                        phoneNumber = msg.Text.Trim();
+                    }
 
+                    if (phoneNumber is null)
+                    {
+                        await Client.SendMessage(chatId, "Будь ласка, поділіться контактом або надішліть номер телефону.", cancellationToken: ct);
+                        
+                        return;
+                    }
+
+                    sess.CitizenContactPhone = phoneNumber;
                     sess.History.Push(ReportStep.AskPhone);
                     sess.Step = ReportStep.AskDescription;
 
+
                     await Client.SendMessage(chatId,
-                        "Опишіть, що ви бачили:",
-                        replyMarkup: InlineMenus.BackCancel(), cancellationToken: ct);
+                         "Номер телефону отримано.",
+                         replyMarkup: new ReplyKeyboardRemove(),
+                         cancellationToken: ct);
+
+                    await Client.SendMessage(chatId,
+                                             "Опишіть, що ви бачили:",
+                                             replyMarkup: InlineMenus.BackCancel(), 
+                                             cancellationToken: ct);
                     break;
 
                 case ReportStep.AskDescription:
@@ -182,7 +208,7 @@ namespace Relict_TelegramBot_Stride.BotControllers
                     else
                         sess.Location = msg.Text;
 
-                    var now = DateTime.UtcNow; // Отримати час один раз
+                    var now = DateTime.UtcNow;
                     var payload = new
                     {
                         citizenName = sess.IsAnonymous == true ? "" : sess.CitizenName,
@@ -194,20 +220,19 @@ namespace Relict_TelegramBot_Stride.BotControllers
                     };
 
                     var ok = await _api.PostCitizenReportAsync(sess.AlertId, payload, ct);
+
                     await Client.SendMessage(chatId,
                         ok ? "✅ Дякуємо! Інформацію надіслано." : "⚠️ Сталася помилка, спробуйте пізніше.",
+                        replyMarkup: new ReplyKeyboardRemove(),
                         cancellationToken: ct);
 
                     _reports.TryRemove(chatId, out _);
-
                     await HandleCallback(new CallbackQuery
                     {
                         Message = msg,
                         Data = "menu_active",
                         Id = Guid.NewGuid().ToString()
-                    }, ct, answer: false
-                    );
-
+                    }, ct, answer: false);
                     break;
             }
         }
@@ -306,7 +331,6 @@ namespace Relict_TelegramBot_Stride.BotControllers
                 return;
             }
 
-            /* ───── вибір анонімності ───── */
             if (cb.Data.StartsWith("rep_anon:", StringComparison.Ordinal))
             {
                 if (!_reports.TryGetValue(chatId, out var sess)) return;
@@ -337,7 +361,6 @@ namespace Relict_TelegramBot_Stride.BotControllers
                 return;
             }
 
-            /* ───── кнопка ⬅️ Назад у wizard ───── */
             if (cb.Data == "rep_back")
             {
                 if (!_reports.TryGetValue(chatId, out var sess) || sess.History.Count == 0)
@@ -468,9 +491,5 @@ namespace Relict_TelegramBot_Stride.BotControllers
 
             return sb.ToString();
         }
-
-
-
-
     }
 }
