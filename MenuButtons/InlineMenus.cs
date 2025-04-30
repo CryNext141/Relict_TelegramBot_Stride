@@ -18,20 +18,36 @@ namespace Relict_TelegramBot_Stride.MenuButtons
             }
             });
 
-        public static InlineKeyboardMarkup NavWithReport(int alertId) =>
-            new(new[]
+        public static InlineKeyboardMarkup NavWithReport(int alertId, int totalAlerts)
+        {
+            if (totalAlerts > 1)
             {
-                new[]
+                return new InlineKeyboardMarkup(new[]
                 {
-                    InlineKeyboardButton.WithCallbackData("◀️", "prev"),
-                    InlineKeyboardButton.WithCallbackData("🏠", "menu"),
-                    InlineKeyboardButton.WithCallbackData("▶️", "next")
-                },
-                new[]
+                    new []
+                    {
+                        InlineKeyboardButton.WithCallbackData("◀️", "prev"),
+                        InlineKeyboardButton.WithCallbackData("🏠", "menu"),
+                        InlineKeyboardButton.WithCallbackData("▶️", "next")
+                    },
+                    new[]
+                    {
+                        InlineKeyboardButton.WithCallbackData("📢 Повідомити інформацію", $"report:{alertId}")
+                    }
+                });
+            }
+            else
+            {
+                return new InlineKeyboardMarkup(new[]
                 {
-                    InlineKeyboardButton.WithCallbackData("📢 Повідомити інформацію", $"report:{alertId}")
-                }
-    });
+                    new []
+                    {
+                        InlineKeyboardButton.WithCallbackData("🏠", "menu"),
+                        InlineKeyboardButton.WithCallbackData("📢 Повідомити інформацію", $"report:{alertId}")
+                    }
+                });
+            }
+        }
 
         public static InlineKeyboardMarkup ReportStart(int alertId) =>
             new(new[]
