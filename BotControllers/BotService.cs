@@ -388,7 +388,7 @@ namespace Relict_TelegramBot_Stride.BotControllers
                 return;
             }
 
-            await ShowAlert(chatId, cb.Message!.MessageId, alerts[pos], ct);
+            await ShowAlert(chatId, cb.Message!.MessageId, alerts[pos], ct, alerts.Count);
             if (answer && !string.IsNullOrEmpty(cb.Id))
                 await Client.AnswerCallbackQuery(cb.Id, cancellationToken: ct);
         }
@@ -404,7 +404,7 @@ namespace Relict_TelegramBot_Stride.BotControllers
             return InputFile.FromStream(new MemoryStream(bytes), fileName);
         }
 
-        private async Task ShowAlert(long chatId, int _, AlertResponse a, CancellationToken ct)
+        private async Task ShowAlert(long chatId, int _, AlertResponse a, CancellationToken ct, int totalAlerts)
         {
             var caption = BuildCaption(a);
 
@@ -421,18 +421,12 @@ namespace Relict_TelegramBot_Stride.BotControllers
                 chatId,
                 caption,
                 parseMode: ParseMode.Markdown,
-                replyMarkup: InlineMenus.NavWithReport(a.AlertId),
+                replyMarkup: InlineMenus.NavWithReport(a.AlertId, totalAlerts),
                 cancellationToken: ct);
 
             _cache.Set($"album_{chatId}", albumMsg.Select(m => m.MessageId).ToList());
             _cache.Set($"text_{chatId}", txt.MessageId);
         }
-
-
-
-
-
-
 
         private string BuildCaption(AlertResponse a)
         {

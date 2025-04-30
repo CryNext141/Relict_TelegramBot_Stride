@@ -13,7 +13,7 @@ namespace Relict_TelegramBot_Stride.Models
 
         public async Task<IReadOnlyList<AlertResponse>> GetAllAsync(CancellationToken ct = default)
         {
-            using var res = await _http.GetAsync("api/Alerts/alerts", ct);
+            using var res = await _http.GetAsync("/api/Alerts/alerts", ct);
             res.EnsureSuccessStatusCode();
 
             await using var stream = await res.Content.ReadAsStreamAsync(ct);
