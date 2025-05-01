@@ -130,7 +130,6 @@ namespace Relict_TelegramBot_Stride.BotControllers
             var chatId = msg.Chat.Id;
             if (!_reports.TryGetValue(chatId, out var sess)) return;
 
-
             var txt = msg.Text?.Trim();
 
             if (txt == "❌ Скасувати")
@@ -175,14 +174,12 @@ namespace Relict_TelegramBot_Stride.BotControllers
                     if (phoneNumber is null)
                     {
                         await Client.SendMessage(chatId, "Будь ласка, поділіться контактом або надішліть номер телефону.", cancellationToken: ct);
-                        
                         return;
                     }
 
                     sess.CitizenContactPhone = phoneNumber;
                     sess.History.Push(ReportStep.AskPhone);
                     sess.Step = ReportStep.AskDescription;
-
 
                     await Client.SendMessage(chatId,
                          "Номер телефону отримано.",
@@ -191,7 +188,7 @@ namespace Relict_TelegramBot_Stride.BotControllers
 
                     await Client.SendMessage(chatId,
                                              "Опишіть, що ви бачили:",
-                                             replyMarkup: InlineMenus.BackCancel(), 
+                                             replyMarkup: InlineMenus.BackCancel(),
                                              cancellationToken: ct);
                     break;
 
@@ -490,6 +487,15 @@ namespace Relict_TelegramBot_Stride.BotControllers
             }
 
             return sb.ToString();
+        }
+
+        public async Task SendMessageAsync(long chatId, string text)
+        {
+            await Client.SendMessage(
+                chatId: chatId,
+                text: text,
+                parseMode: Telegram.Bot.Types.Enums.ParseMode.Markdown
+            );
         }
     }
 }
