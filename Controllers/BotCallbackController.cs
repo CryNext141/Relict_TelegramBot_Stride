@@ -8,9 +8,9 @@ namespace Relict_TelegramBot_Stride.Controllers
     [Route("api/bot")]
     public class BotCallbackController : ControllerBase
     {
-        private readonly BotService _botService;
+        private readonly IBotService _botService;
 
-        public BotCallbackController(BotService botService)
+        public BotCallbackController(IBotService botService)
         {
             _botService = botService;
         }

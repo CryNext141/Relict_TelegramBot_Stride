@@ -16,6 +16,7 @@ namespace Relict_TelegramBot_Stride.BotControllers
     {
         TelegramBotClient Client { get; }
         Task HandleUpdate(Update update, CancellationToken ct);
+        Task SendMessageAsync(long chatId, string text);
         Task SendStart(long chatId, CancellationToken ct);
     }
 
@@ -23,15 +24,18 @@ namespace Relict_TelegramBot_Stride.BotControllers
     {
         public TelegramBotClient Client { get; }
         private readonly AlertApi _api;
+        private readonly NotificationsApi _notificationsApi;
         private readonly IMemoryCache _cache;
         private readonly ConcurrentDictionary<long, int> _positions = new();
         private readonly ConcurrentDictionary<long, ReportSession> _reports = new();
+        private readonly ConcurrentDictionary<long, SubSession> _subs = new();
 
-        public BotService(IConfiguration cfg, AlertApi api, IMemoryCache cache)
+        public BotService(IConfiguration cfg, AlertApi api, NotificationsApi notificationsApi, IMemoryCache cache)
         {
             Client = new TelegramBotClient(cfg["Telegram:BotToken"]!);
             _api = api;
             _cache = cache;
+            _notificationsApi = notificationsApi;
         }
 
         private static readonly Dictionary<string, string> GenderUa = new()
@@ -46,6 +50,40 @@ namespace Relict_TelegramBot_Stride.BotControllers
             ["Medium"] = "Середній",
             ["Dark"] = "Темний",
             ["Unknown"] = "Невідомий"
+        };
+
+        private static readonly Dictionary<string, string> RegionUa = new()
+        {
+            ["Kyiv"] = "Київ",
+            ["Kharkiv"] = "Харків",
+            ["Odesa"] = "Одеса",
+            ["Dnipro"] = "Дніпро",
+            ["Donetsk"] = "Донецьк",
+            ["Lviv"] = "Львів",
+            ["Zaporizhzhia"] = "Запоріжжя",
+            ["Kryvyi Rih"] = "Кривий Ріг",
+            ["Mykolaiv"] = "Миколаїв",
+            ["Mariupol"] = "Маріуполь",
+            ["Luhansk"] = "Луганськ",
+            ["Vinnytsia"] = "Вінниця",
+            ["Sevastopol"] = "Севастополь",
+            ["Simferopol"] = "Сімферополь",
+            ["Kherson"] = "Херсон",
+            ["Poltava"] = "Полтава",
+            ["Chernihiv"] = "Чернігів",
+            ["Cherkasy"] = "Черкаси",
+            ["Zhytomyr"] = "Житомир",
+            ["Sumy"] = "Суми",
+            ["Khmelnytskyi"] = "Хмельницький",
+            ["Chernivtsi"] = "Чернівці",
+            ["Rivne"] = "Рівне",
+            ["Ivano-Frankivsk"] = "Івано-Франківськ",
+            ["Kropyvnytskyi"] = "Кропивницький",
+            ["Kamianske"] = "Кам'янське",
+            ["Lutsk"] = "Луцьк",
+            ["Kremenchuk"] = "Кременчук",
+            ["Bila Tserkva"] = "Біла Церква",
+            ["Melitopol"] = "Мелітополь"
         };
 
         public async Task HandleUpdate(Update update, CancellationToken ct)
@@ -125,12 +163,59 @@ namespace Relict_TelegramBot_Stride.BotControllers
                 replyMarkup: kb, cancellationToken: ct);
         }
 
+        private InlineKeyboardMarkup BuildRegionsKeyboard(IReadOnlyList<RegionDto> regions, SubSession s)
+        {
+            const int pageSize = 6;
+            int start = s.CurrentPage * pageSize;
+            var page = regions.Skip(start).Take(pageSize).ToList();
+
+            var rows = new List<IEnumerable<InlineKeyboardButton>>();
+
+            foreach (var r in page)
+            {
+                bool chosen = s.Selected.Contains(r.RegionId);
+                string name = RegionUa.TryGetValue(r.Name, out var ua) ? ua : r.Name;
+                rows.Add(new[]
+                {
+            InlineKeyboardButton.WithCallbackData(
+                $"{(chosen ? "✅" : "☑️")} {name}", $"reg_sel:{r.RegionId}")
+        });
+            }
+
+            var nav = new List<InlineKeyboardButton>();
+            if (start > 0) nav.Add(InlineKeyboardButton.WithCallbackData("◀️", "reg_prev"));
+            if (start + pageSize < regions.Count) nav.Add(InlineKeyboardButton.WithCallbackData("▶️", "reg_next"));
+            if (nav.Any()) rows.Add(nav);
+
+            rows.Add(new[]
+            {
+        InlineKeyboardButton.WithCallbackData("✅ Підписатися", "reg_sub"),
+        InlineKeyboardButton.WithCallbackData("❌ Скасувати",   "reg_cancel")
+    });
+
+            return new(rows);
+        }
+
         private async Task HandleWizardMessage(Message msg, CancellationToken ct)
         {
             var chatId = msg.Chat.Id;
             if (!_reports.TryGetValue(chatId, out var sess)) return;
 
             var txt = msg.Text?.Trim();
+
+            if (msg.Text is "❌ Скасувати")
+            {
+                _subs.TryRemove(chatId, out _);
+                await Client.SendMessage(chatId, "Підписку скасовано.", cancellationToken: ct);
+                await HandleCallback(new CallbackQuery { Message = msg, Data = "menu" }, ct, false);
+                return;
+            }
+
+            if (msg.Text is "⬅️ Назад")
+            {
+                await HandleCallback(new CallbackQuery { Message = msg, Data = "reg_prev" }, ct, false);
+                return;
+            }
 
             if (txt == "❌ Скасувати")
             {
@@ -236,6 +321,12 @@ namespace Relict_TelegramBot_Stride.BotControllers
 
         private async Task HandleCallback(CallbackQuery cb, CancellationToken ct, bool answer = true)
         {
+            if (cb.Message is null)
+            {
+                await Client.AnswerCallbackQuery(cb.Id, "Error: No message context.", cancellationToken: ct);
+                return;
+            }
+
             var chatId = cb.Message!.Chat.Id;
 
             if (cb.Data == "menu")
@@ -263,6 +354,100 @@ namespace Relict_TelegramBot_Stride.BotControllers
                 _positions.TryRemove(chatId, out _);
 
                 await Client.AnswerCallbackQuery(cb.Id, cancellationToken: ct);
+                return;
+            }
+
+            if (cb.Data == "sub")
+            {
+                await Client.EditMessageText(
+                    chatId: chatId,
+                    messageId: cb.Message!.MessageId,
+                    text: "Підпишіться на сповіщення про нові алерти у вибраних містах.",
+                    replyMarkup: InlineMenus.SubMenu(),
+                    cancellationToken: ct);
+
+                await Client.AnswerCallbackQuery(cb.Id, cancellationToken: ct);
+                return;
+            }
+
+            if (cb.Data!.StartsWith("reg_page:", StringComparison.Ordinal))
+            {
+                var page = int.Parse(cb.Data.Split(':')[1]);
+                var regions = await _notificationsApi.GetRegionsAsync(ct);
+
+                var ss = _subs.GetOrAdd(chatId, _ => new SubSession());
+                ss.CurrentPage = page;
+
+                await Client.EditMessageText(
+                    chatId, cb.Message!.MessageId,
+                    "Оберіть місто (можна кілька):",
+                    replyMarkup: BuildRegionsKeyboard(regions, ss),
+                    cancellationToken: ct);
+
+                await Client.AnswerCallbackQuery(cb.Id, cancellationToken: ct);
+                return;
+            }
+
+            if (cb.Data.StartsWith("reg_sel:", StringComparison.Ordinal))
+            {
+                var id = int.Parse(cb.Data.Split(':')[1]);
+                var regions = await _notificationsApi.GetRegionsAsync(ct);
+                if (!_subs.TryGetValue(chatId, out var ss)) ss = new();
+
+                if (!ss.Selected.Add(id)) ss.Selected.Remove(id);   // toggle
+
+                await Client.EditMessageReplyMarkup(
+                    chatId, cb.Message!.MessageId,
+                    replyMarkup: BuildRegionsKeyboard(regions, ss),
+                    cancellationToken: ct);
+
+                await Client.AnswerCallbackQuery(cb.Id, cancellationToken: ct);
+                return;
+            }
+
+            if (cb.Data is "reg_prev" or "reg_next")
+            {
+                if (!_subs.TryGetValue(chatId, out var ss)) return;
+                var regions = await _notificationsApi.GetRegionsAsync(ct);
+
+                ss.CurrentPage += cb.Data == "reg_prev" ? -1 : 1;
+                if (ss.CurrentPage < 0) ss.CurrentPage = 0;
+                if (ss.CurrentPage * 6 >= regions.Count) ss.CurrentPage--;
+
+                await Client.EditMessageReplyMarkup(
+                    chatId, cb.Message!.MessageId,
+                    replyMarkup: BuildRegionsKeyboard(regions, ss),
+                    cancellationToken: ct);
+
+                await Client.AnswerCallbackQuery(cb.Id, cancellationToken: ct);
+                return;
+            }
+
+            if (cb.Data == "reg_cancel")
+            {
+                _subs.TryRemove(chatId, out _);
+                await Client.SendMessage(chatId, "Підписку скасовано.", cancellationToken: ct);
+                await HandleCallback(new CallbackQuery { Message = cb.Message, Data = "menu" }, ct, false);
+                return;
+            }
+
+            if (cb.Data == "reg_sub")
+            {
+                if (!_subs.TryGetValue(chatId, out var ss) || ss.Selected.Count == 0)
+                {
+                    await Client.AnswerCallbackQuery(cb.Id, "Спершу оберіть хоча б одне місто", showAlert: true, cancellationToken: ct);
+                    return;
+                }
+
+                var ok = await _notificationsApi.PostSubscriptionAsync(
+                    new SubscribePayload(chatId, ss.Selected.ToList()), ct);
+
+                await Client.SendMessage(chatId,
+                    ok ? "✅ Підписку оновлено." : "⚠️ Не вдалося зберегти підписку.",
+                    cancellationToken: ct);
+
+                _subs.TryRemove(chatId, out _);
+                await HandleCallback(new CallbackQuery { Message = cb.Message, Data = "menu" }, ct, false);
                 return;
             }
 
@@ -489,13 +674,15 @@ namespace Relict_TelegramBot_Stride.BotControllers
             return sb.ToString();
         }
 
+        
+
         public async Task SendMessageAsync(long chatId, string text)
         {
             await Client.SendMessage(
-                chatId: chatId,
-                text: text,
-                parseMode: Telegram.Bot.Types.Enums.ParseMode.Markdown
-            );
+                 chatId: chatId,
+                 text: text,
+                 parseMode: Telegram.Bot.Types.Enums.ParseMode.Markdown
+             );
         }
     }
 }

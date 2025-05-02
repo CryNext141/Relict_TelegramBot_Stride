@@ -32,5 +32,7 @@ namespace Relict_TelegramBot_Stride.Models
             using var res = await _http.PostAsync($"api/CitizenreportsControler/citizen-report?alertId={alertId}", content, ct);
             return res.IsSuccessStatusCode;
         }
+
+
     }
 }

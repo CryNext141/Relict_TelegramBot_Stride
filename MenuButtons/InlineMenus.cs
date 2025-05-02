@@ -5,7 +5,19 @@ namespace Relict_TelegramBot_Stride.MenuButtons
     public static class InlineMenus
     {
         public static InlineKeyboardMarkup MainMenu() =>
-            new(InlineKeyboardButton.WithCallbackData("🟢 Активні алерти", "menu_active"));
+            new(
+                InlineKeyboardButton.WithCallbackData("🟢 Активні алерти", "menu_active"),
+                InlineKeyboardButton.WithCallbackData("🔔 Підписка", "sub")
+             );
+
+        public static InlineKeyboardMarkup SubMenu() =>
+            new(new[]
+            {
+                InlineKeyboardButton.WithCallbackData("📍 Обрати місто", "reg_page:0"),
+                InlineKeyboardButton.WithCallbackData("⬅️ Назад",        "menu")
+    });
+
+        
 
         public static InlineKeyboardMarkup Nav() =>
             new(new[]

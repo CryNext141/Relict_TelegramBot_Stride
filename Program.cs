@@ -13,6 +13,11 @@ builder.Services.AddHttpClient<AlertApi>(c =>
     c.DefaultRequestHeaders.Add("X-API-KEY", builder.Configuration["Api:ApiKey"]);
 });
 
+builder.Services.AddHttpClient<NotificationsApi>(c =>
+{
+    c.BaseAddress = new Uri(builder.Configuration["Api:KisenBaseUrl"]!);
+});
+
 builder.Services.AddSingleton<IBotService, BotService>();
 builder.Services.AddHostedService<BotHostedService>();
 
