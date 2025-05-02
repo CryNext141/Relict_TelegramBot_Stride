@@ -14,10 +14,20 @@ namespace Relict_TelegramBot_Stride.MenuButtons
             new(new[]
             {
                 InlineKeyboardButton.WithCallbackData("📍 Обрати місто", "reg_page:0"),
+                InlineKeyboardButton.WithCallbackData("📑 Мої міста",    "my_page:0"),
                 InlineKeyboardButton.WithCallbackData("⬅️ Назад",        "menu")
-    });
+            });
 
-        
+        public static InlineKeyboardMarkup MyNav(IEnumerable<InlineKeyboardButton[]> rows) =>
+            new(rows.Concat(new[]
+            {
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData("🚫 Відписатися", "my_unsub"),
+                    InlineKeyboardButton.WithCallbackData("❌ Скасувати",   "my_cancel")
+                }
+    }));
+
 
         public static InlineKeyboardMarkup Nav() =>
             new(new[]

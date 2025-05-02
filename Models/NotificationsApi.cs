@@ -38,5 +38,24 @@ namespace Relict_TelegramBot_Stride.Models
             using var res = await _http.PostAsync("api/subscribers/bot", content, ct);
             return res.IsSuccessStatusCode;
         }
+
+        public async Task<IReadOnlyList<int>> GetUserRegionsAsync(long chatId, CancellationToken ct = default)
+        {
+            using var res = await _http.GetAsync($"api/subscribers/tg-{chatId}/regions", ct);
+            if (!res.IsSuccessStatusCode) return Array.Empty<int>();
+
+            await using var s = await res.Content.ReadAsStreamAsync(ct);
+            return await JsonSerializer.DeserializeAsync<List<int>>(s, _json, ct) ?? [];
+        }
+
+        public async Task<bool> DeleteUserRegionsAsync(long chatId, IEnumerable<int> ids, CancellationToken ct = default)
+        {
+            var json = JsonSerializer.Serialize(ids);
+            var req = new HttpRequestMessage(HttpMethod.Delete, $"api/subscribers/tg-{chatId}/regions")
+            { Content = new StringContent(json, Encoding.UTF8, "application/json") };
+
+            using var res = await _http.SendAsync(req, ct);
+            return res.IsSuccessStatusCode;
+        }
     }
 }

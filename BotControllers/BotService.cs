@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Caching.Memory;
+﻿using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Relict_TelegramBot_Stride.MenuButtons;
 using Relict_TelegramBot_Stride.Models;
@@ -29,6 +30,7 @@ namespace Relict_TelegramBot_Stride.BotControllers
         private readonly ConcurrentDictionary<long, int> _positions = new();
         private readonly ConcurrentDictionary<long, ReportSession> _reports = new();
         private readonly ConcurrentDictionary<long, SubSession> _subs = new();
+        private readonly ConcurrentDictionary<long, MySession> _my = new();
 
         public BotService(IConfiguration cfg, AlertApi api, NotificationsApi notificationsApi, IMemoryCache cache)
         {
@@ -194,6 +196,41 @@ namespace Relict_TelegramBot_Stride.BotControllers
     });
 
             return new(rows);
+        }
+
+        private InlineKeyboardMarkup BuildMyKeyboard(IReadOnlyList<RegionDto> regions, MySession s, IEnumerable<int> subscribed)
+        {
+            const int pageSize = 6;
+            int start = s.CurrentPage * pageSize;
+            var page = regions.Where(r => subscribed.Contains(r.RegionId))
+                               .Skip(start).Take(pageSize).ToList();
+
+            var rows = new List<InlineKeyboardButton[]>();
+
+            foreach (var r in page)
+            {
+                bool chosen = s.Selected.Contains(r.RegionId);
+                string ua = RegionUa.TryGetValue(r.Name, out var t) ? t : r.Name;
+                rows.Add(new[]
+                {
+            InlineKeyboardButton.WithCallbackData(
+                $"{(chosen ? "✅" : "☑️")} {ua}", $"my_sel:{r.RegionId}")
+        });
+            }
+
+            if (rows.Count == 0)
+                rows.Add(new[] { InlineKeyboardButton.WithCallbackData("— список порожній —", "noop") });
+
+            var subsList = subscribed.ToList();
+            if (subsList.Count > pageSize)
+            {
+                var nav = new List<InlineKeyboardButton>();
+                if (start > 0) nav.Add(InlineKeyboardButton.WithCallbackData("◀️", "my_prev"));
+                if (start + pageSize < subsList.Count) nav.Add(InlineKeyboardButton.WithCallbackData("▶️", "my_next"));
+                if (nav.Any()) rows.Add(nav.ToArray());
+            }
+
+            return InlineMenus.MyNav(rows);
         }
 
         private async Task HandleWizardMessage(Message msg, CancellationToken ct)
@@ -450,6 +487,107 @@ namespace Relict_TelegramBot_Stride.BotControllers
                 await HandleCallback(new CallbackQuery { Message = cb.Message, Data = "menu" }, ct, false);
                 return;
             }
+
+            if (cb.Data == "my_page:0")
+            {
+                var regions = await _notificationsApi.GetRegionsAsync(ct);
+                var subscribed = await _notificationsApi.GetUserRegionsAsync(chatId, ct);
+
+                if (subscribed.Count == 0)
+                {
+                    await Client.EditMessageText(chatId, cb.Message!.MessageId,
+                        "Ви ще не підписані на жодне місто.",
+                        replyMarkup: InlineKeyboardMarkup.Empty(), cancellationToken: ct);
+                    await Client.AnswerCallbackQuery(cb.Id, cancellationToken: ct);
+                    return;
+                }
+
+                var ms = _my.GetOrAdd(chatId, _ => new MySession());
+                ms.CurrentPage = 0; ms.Selected.Clear();
+
+                await Client.EditMessageText(chatId, cb.Message!.MessageId,
+                    "Ваші підписки (виберіть, щоб відписатись):",
+                    replyMarkup: BuildMyKeyboard(regions, ms, subscribed),
+                    cancellationToken: ct);
+
+                await Client.AnswerCallbackQuery(cb.Id, cancellationToken: ct);
+                return;
+            }
+
+            /* ───── вибір/зняття міста ───── */
+            if (cb.Data.StartsWith("my_sel:", StringComparison.Ordinal))
+            {
+                if (!_my.TryGetValue(chatId, out var ms)) return;
+                int id = int.Parse(cb.Data.Split(':')[1]);
+
+                if (!ms.Selected.Add(id)) ms.Selected.Remove(id);
+
+                var regions = await _notificationsApi.GetRegionsAsync(ct);
+                var subscribed = await _notificationsApi.GetUserRegionsAsync(chatId, ct);
+
+                await Client.EditMessageReplyMarkup(
+                    chatId, cb.Message!.MessageId,
+                    replyMarkup: BuildMyKeyboard(regions, ms, subscribed),
+                    cancellationToken: ct);
+
+                await Client.AnswerCallbackQuery(cb.Id, cancellationToken: ct);
+                return;
+            }
+
+            /* ───── пагінація my_prev/my_next ───── */
+            if (cb.Data is "my_prev" or "my_next")
+            {
+                if (!_my.TryGetValue(chatId, out var ms)) return;
+
+                var subs = await _notificationsApi.GetUserRegionsAsync(chatId, ct);
+                if (subs.Count <= 6) { await Client.AnswerCallbackQuery(cb.Id); return; }
+
+                ms.CurrentPage += cb.Data == "my_prev" ? -1 : 1;
+                if (ms.CurrentPage < 0) ms.CurrentPage = 0;
+                if (ms.CurrentPage * 6 >= subs.Count) ms.CurrentPage--;
+
+                var regions = await _notificationsApi.GetRegionsAsync(ct);
+                await Client.EditMessageReplyMarkup(
+                    chatId, cb.Message!.MessageId,
+                    replyMarkup: BuildMyKeyboard(regions, ms, subs),
+                    cancellationToken: ct);
+
+                await Client.AnswerCallbackQuery(cb.Id, cancellationToken: ct);
+                return;
+            }
+
+            /* ───── скасувати / повернутись з 'Мої міста' ───── */
+            if (cb.Data == "my_cancel")
+            {
+                _my.TryRemove(chatId, out _);
+                await Client.EditMessageText(chatId, cb.Message!.MessageId,
+                    "Підписку не змінено.",
+                    replyMarkup: InlineMenus.SubMenu(), cancellationToken: ct);
+
+                await Client.AnswerCallbackQuery(cb.Id, cancellationToken: ct);
+                return;
+            }
+
+            /* ───── відписатися ───── */
+            if (cb.Data == "my_unsub")
+            {
+                if (!_my.TryGetValue(chatId, out var ms) || ms.Selected.Count == 0)
+                {
+                    await Client.AnswerCallbackQuery(cb.Id, "Виберіть місто для відписки", true, cancellationToken: ct);
+                    return;
+                }
+
+                var ok = await _notificationsApi.DeleteUserRegionsAsync(chatId, ms.Selected, ct);
+
+                await Client.EditMessageText(chatId, cb.Message!.MessageId,
+                    ok ? "🚫 Вибрані міста відписано." : "⚠️ Не вдалося змінити підписку.",
+                    replyMarkup: InlineMenus.MainMenu(), cancellationToken: ct);
+
+                _my.TryRemove(chatId, out _);
+                await Client.AnswerCallbackQuery(cb.Id, cancellationToken: ct);
+                return;
+            }
+
 
             if (cb.Data == "menu_active")
             {
