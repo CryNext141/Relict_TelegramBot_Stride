@@ -175,13 +175,17 @@ namespace Relict_TelegramBot_Stride.BotControllers
 
             foreach (var r in page)
             {
-                bool chosen = s.Selected.Contains(r.RegionId);
-                string name = RegionUa.TryGetValue(r.Name, out var ua) ? ua : r.Name;
+                bool orig = s.Original.Contains(r.RegionId);
+                bool add = s.Selected.Contains(r.RegionId);
+                bool chosen = orig || add;
+
+                string ua = RegionUa.TryGetValue(r.Name, out var t) ? t : r.Name;
+                string mark = chosen ? "✅" : "☑️";
+
                 rows.Add(new[]
                 {
-            InlineKeyboardButton.WithCallbackData(
-                $"{(chosen ? "✅" : "☑️")} {name}", $"reg_sel:{r.RegionId}")
-        });
+                    InlineKeyboardButton.WithCallbackData($"{mark} {ua}", $"reg_sel:{r.RegionId}")
+                });
             }
 
             var nav = new List<InlineKeyboardButton>();
@@ -191,9 +195,9 @@ namespace Relict_TelegramBot_Stride.BotControllers
 
             rows.Add(new[]
             {
-        InlineKeyboardButton.WithCallbackData("✅ Підписатися", "reg_sub"),
-        InlineKeyboardButton.WithCallbackData("❌ Скасувати",   "reg_cancel")
-    });
+                InlineKeyboardButton.WithCallbackData("✅ Підписатися", "reg_sub"),
+                InlineKeyboardButton.WithCallbackData("❌ Скасувати",   "reg_cancel")
+            });
 
             return new(rows);
         }
@@ -213,9 +217,8 @@ namespace Relict_TelegramBot_Stride.BotControllers
                 string ua = RegionUa.TryGetValue(r.Name, out var t) ? t : r.Name;
                 rows.Add(new[]
                 {
-            InlineKeyboardButton.WithCallbackData(
-                $"{(chosen ? "✅" : "☑️")} {ua}", $"my_sel:{r.RegionId}")
-        });
+                    InlineKeyboardButton.WithCallbackData($"{(chosen ? "✅" : "☑️")} {ua}", $"my_sel:{r.RegionId}")
+                });
             }
 
             if (rows.Count == 0)
@@ -407,17 +410,20 @@ namespace Relict_TelegramBot_Stride.BotControllers
                 return;
             }
 
-            if (cb.Data!.StartsWith("reg_page:", StringComparison.Ordinal))
+            if (cb.Data == "reg_page:0")
             {
-                var page = int.Parse(cb.Data.Split(':')[1]);
                 var regions = await _notificationsApi.GetRegionsAsync(ct);
+                var subscribed = await _notificationsApi.GetUserRegionsAsync(chatId, ct);
 
                 var ss = _subs.GetOrAdd(chatId, _ => new SubSession());
-                ss.CurrentPage = page;
+                ss.CurrentPage = 0;
+                ss.Selected.Clear();
+                ss.Original.Clear();
+                foreach (var id in subscribed) ss.Original.Add(id);
 
                 await Client.EditMessageText(
                     chatId, cb.Message!.MessageId,
-                    "Оберіть місто (можна кілька):",
+                    "Оберіть місто (підписки позначено ✅):",
                     replyMarkup: BuildRegionsKeyboard(regions, ss),
                     cancellationToken: ct);
 
@@ -428,11 +434,17 @@ namespace Relict_TelegramBot_Stride.BotControllers
             if (cb.Data.StartsWith("reg_sel:", StringComparison.Ordinal))
             {
                 var id = int.Parse(cb.Data.Split(':')[1]);
+                if (!_subs.TryGetValue(chatId, out var ss)) return;
+
+                if (ss.Original.Contains(id))
+                {
+                    await Client.AnswerCallbackQuery(cb.Id, "Ви вже підписані на це місто", showAlert: true, cancellationToken: ct);
+                    return;
+                }
+
+                if (!ss.Selected.Add(id)) ss.Selected.Remove(id); 
+
                 var regions = await _notificationsApi.GetRegionsAsync(ct);
-                if (!_subs.TryGetValue(chatId, out var ss)) ss = new();
-
-                if (!ss.Selected.Add(id)) ss.Selected.Remove(id);   // toggle
-
                 await Client.EditMessageReplyMarkup(
                     chatId, cb.Message!.MessageId,
                     replyMarkup: BuildRegionsKeyboard(regions, ss),
@@ -472,19 +484,20 @@ namespace Relict_TelegramBot_Stride.BotControllers
             {
                 if (!_subs.TryGetValue(chatId, out var ss) || ss.Selected.Count == 0)
                 {
-                    await Client.AnswerCallbackQuery(cb.Id, "Спершу оберіть хоча б одне місто", showAlert: true, cancellationToken: ct);
+                    await Client.AnswerCallbackQuery(cb.Id, "Оберіть нові міста для підписки", true, cancellationToken: ct);
                     return;
                 }
 
+                var newList = ss.Original.Union(ss.Selected).ToList();
                 var ok = await _notificationsApi.PostSubscriptionAsync(
-                    new SubscribePayload(chatId, ss.Selected.ToList()), ct);
+                    new SubscribePayload(chatId, newList), ct);
 
-                await Client.SendMessage(chatId,
+                await Client.EditMessageText(chatId, cb.Message!.MessageId,
                     ok ? "✅ Підписку оновлено." : "⚠️ Не вдалося зберегти підписку.",
-                    cancellationToken: ct);
+                    replyMarkup: InlineMenus.MainMenu(), cancellationToken: ct);
 
                 _subs.TryRemove(chatId, out _);
-                await HandleCallback(new CallbackQuery { Message = cb.Message, Data = "menu" }, ct, false);
+                await Client.AnswerCallbackQuery(cb.Id, cancellationToken: ct);
                 return;
             }
 
@@ -497,7 +510,7 @@ namespace Relict_TelegramBot_Stride.BotControllers
                 {
                     await Client.EditMessageText(chatId, cb.Message!.MessageId,
                         "Ви ще не підписані на жодне місто.",
-                        replyMarkup: InlineKeyboardMarkup.Empty(), cancellationToken: ct);
+                        replyMarkup: InlineMenus.SubMenu(), cancellationToken: ct);
                     await Client.AnswerCallbackQuery(cb.Id, cancellationToken: ct);
                     return;
                 }
@@ -514,7 +527,6 @@ namespace Relict_TelegramBot_Stride.BotControllers
                 return;
             }
 
-            /* ───── вибір/зняття міста ───── */
             if (cb.Data.StartsWith("my_sel:", StringComparison.Ordinal))
             {
                 if (!_my.TryGetValue(chatId, out var ms)) return;
@@ -534,7 +546,6 @@ namespace Relict_TelegramBot_Stride.BotControllers
                 return;
             }
 
-            /* ───── пагінація my_prev/my_next ───── */
             if (cb.Data is "my_prev" or "my_next")
             {
                 if (!_my.TryGetValue(chatId, out var ms)) return;
@@ -556,7 +567,6 @@ namespace Relict_TelegramBot_Stride.BotControllers
                 return;
             }
 
-            /* ───── скасувати / повернутись з 'Мої міста' ───── */
             if (cb.Data == "my_cancel")
             {
                 _my.TryRemove(chatId, out _);
@@ -568,7 +578,6 @@ namespace Relict_TelegramBot_Stride.BotControllers
                 return;
             }
 
-            /* ───── відписатися ───── */
             if (cb.Data == "my_unsub")
             {
                 if (!_my.TryGetValue(chatId, out var ms) || ms.Selected.Count == 0)

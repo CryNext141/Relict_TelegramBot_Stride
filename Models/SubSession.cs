@@ -10,5 +10,6 @@ namespace Relict_TelegramBot_Stride.Models
     {
         public int CurrentPage { get; set; }
         public HashSet<int> Selected { get; } = new();
+        public HashSet<int> Original { get; } = new();
     }
 }
