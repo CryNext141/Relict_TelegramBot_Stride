@@ -5,7 +5,29 @@ namespace Relict_TelegramBot_Stride.MenuButtons
     public static class InlineMenus
     {
         public static InlineKeyboardMarkup MainMenu() =>
-            new(InlineKeyboardButton.WithCallbackData("🟢 Активні алерти", "menu_active"));
+            new(
+                InlineKeyboardButton.WithCallbackData("🟢 Активні алерти", "menu_active"),
+                InlineKeyboardButton.WithCallbackData("🔔 Підписка", "sub")
+             );
+
+        public static InlineKeyboardMarkup SubMenu() =>
+            new(new[]
+            {
+                InlineKeyboardButton.WithCallbackData("📍 Обрати місто", "reg_page:0"),
+                InlineKeyboardButton.WithCallbackData("📑 Мої міста",    "my_page:0"),
+                InlineKeyboardButton.WithCallbackData("⬅️ Назад",        "menu")
+            });
+
+        public static InlineKeyboardMarkup MyNav(IEnumerable<InlineKeyboardButton[]> rows) =>
+            new(rows.Concat(new[]
+            {
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData("🚫 Відписатися", "my_unsub"),
+                    InlineKeyboardButton.WithCallbackData("❌ Скасувати",   "my_cancel")
+                }
+    }));
+
 
         public static InlineKeyboardMarkup Nav() =>
             new(new[]
@@ -53,6 +75,19 @@ namespace Relict_TelegramBot_Stride.MenuButtons
             new(new[]
             {
                 InlineKeyboardButton.WithCallbackData("📢 Повідомити інформацію", $"report:{alertId}")
+            });
+
+        public static InlineKeyboardMarkup DetailNav(int alertId, int originMsgId) =>
+            new(new[]
+            {
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData("⬅️ Назад", $"alert_back:{originMsgId}")
+                },
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData("📢 Повідомити інформацію", $"report:{alertId}:{originMsgId}")
+                }
             });
 
         public static InlineKeyboardMarkup AnonChoice() =>

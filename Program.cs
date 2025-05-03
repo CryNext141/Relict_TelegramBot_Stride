@@ -1,24 +1,31 @@
-﻿using Microsoft.AspNetCore.DataProtection.KeyManagement;
+﻿using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Relict_TelegramBot_Stride.BotControllers;
 using Relict_TelegramBot_Stride.Models;
-using System.Net.Http.Headers;
 
-var host = Host.CreateDefaultBuilder(args)
-    .ConfigureServices((ctx, services) =>
-    {
-        services.AddMemoryCache();
+var builder = WebApplication.CreateBuilder(args);
 
-        services.AddHttpClient<AlertApi>(c =>
-        {
-            c.BaseAddress = new Uri(ctx.Configuration["Api:BaseUrl"]!);
-        c.DefaultRequestHeaders.Add("X-API-KEY", ctx.Configuration["Api:ApiKey"]);
-        });
+builder.Services.AddMemoryCache();
 
-        services.AddSingleton<IBotService, BotService>();
-        services.AddHostedService<BotHostedService>();
-    })
-    .Build();
+builder.Services.AddHttpClient<AlertApi>(c =>
+{
+    c.BaseAddress = new Uri(builder.Configuration["Api:BaseUrl"]!);
+    c.DefaultRequestHeaders.Add("X-API-KEY", builder.Configuration["Api:ApiKey"]);
+});
 
-await host.RunAsync();
+builder.Services.AddHttpClient<NotificationsApi>(c =>
+{
+    c.BaseAddress = new Uri(builder.Configuration["Api:KisenBaseUrl"]!);
+});
+
+builder.Services.AddSingleton<IBotService, BotService>();
+builder.Services.AddHostedService<BotHostedService>();
+
+builder.Services.AddControllers();
+
+var app = builder.Build();
+
+
+app.MapControllers();
+
+await app.RunAsync();
