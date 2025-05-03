@@ -9,6 +9,7 @@ namespace Relict_TelegramBot_Stride.DTO
     public class SendMessageDto
     {
         public long ChatId { get; set; }
+        public int AlertId { get; set; }
         public string Text { get; set; }
     }
 }

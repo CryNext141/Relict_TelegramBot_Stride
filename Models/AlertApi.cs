@@ -21,10 +21,19 @@ namespace Relict_TelegramBot_Stride.Models
                    ?? Array.Empty<AlertResponse>();
         }
 
-        public async Task<bool> PostCitizenReportAsync(
-            int alertId,
-            object payload,
-            CancellationToken ct = default)
+        public async Task<AlertResponse?> GetAlertByIdAsync(int id, CancellationToken ct = default)
+        {
+            using var res = await _http.GetAsync($"api/Alerts/alert/{id}", ct);
+            if (!res.IsSuccessStatusCode) return null;
+
+            await using var s = await res.Content.ReadAsStreamAsync(ct);
+
+            var list = await JsonSerializer.DeserializeAsync<List<AlertResponse>>(s, _json, ct);
+            return list?.FirstOrDefault();
+        }
+
+
+        public async Task<bool> PostCitizenReportAsync(int alertId, object payload, CancellationToken ct = default)
         {
             var json = JsonSerializer.Serialize(payload);
             using var content = new StringContent(json, Encoding.UTF8, "application/json");

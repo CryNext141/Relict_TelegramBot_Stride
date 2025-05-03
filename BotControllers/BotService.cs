@@ -1,5 +1,4 @@
-﻿using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Caching.Memory;
+﻿using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Relict_TelegramBot_Stride.MenuButtons;
 using Relict_TelegramBot_Stride.Models;
@@ -17,7 +16,7 @@ namespace Relict_TelegramBot_Stride.BotControllers
     {
         TelegramBotClient Client { get; }
         Task HandleUpdate(Update update, CancellationToken ct);
-        Task SendMessageAsync(long chatId, string text);
+        Task SendAlertNotification(long chatId, int alertId, string text);
         Task SendStart(long chatId, CancellationToken ct);
     }
 
@@ -349,12 +348,24 @@ namespace Relict_TelegramBot_Stride.BotControllers
                         cancellationToken: ct);
 
                     _reports.TryRemove(chatId, out _);
-                    await HandleCallback(new CallbackQuery
+
+                    int originId = sess.OriginMessageId ?? -1;
+
+
+                    if (originId > 0)
                     {
-                        Message = msg,
-                        Data = "menu_active",
-                        Id = Guid.NewGuid().ToString()
-                    }, ct, answer: false);
+                        await HandleCallback(new CallbackQuery { Message = msg, Data = "menu" }, ct, false);
+                    }
+                    else
+                    {
+                        await HandleCallback(new CallbackQuery
+                        {
+                            Message = msg,
+                            Data = "menu_active",
+                            Id = Guid.NewGuid().ToString()
+                        }, ct, answer: false);
+                    }
+
                     break;
             }
         }
@@ -442,7 +453,7 @@ namespace Relict_TelegramBot_Stride.BotControllers
                     return;
                 }
 
-                if (!ss.Selected.Add(id)) ss.Selected.Remove(id); 
+                if (!ss.Selected.Add(id)) ss.Selected.Remove(id);
 
                 var regions = await _notificationsApi.GetRegionsAsync(ct);
                 await Client.EditMessageReplyMarkup(
@@ -598,6 +609,40 @@ namespace Relict_TelegramBot_Stride.BotControllers
             }
 
 
+            if (cb.Data!.StartsWith("alert_detail:", StringComparison.Ordinal))
+            {
+                int alertId = int.Parse(cb.Data.Split(':')[1]);
+
+                var alert = await _api.GetAlertByIdAsync(alertId, ct);
+                if (alert is null)
+                {
+                    await Client.AnswerCallbackQuery(cb.Id, "Алерт не знайдено", true);
+                    return;
+                }
+
+                int originId = cb.Message!.MessageId;
+
+                await ShowSingleAlert(chatId, alert, originId, ct);
+
+                await Client.AnswerCallbackQuery(cb.Id, cancellationToken: ct);
+                return;
+            }
+
+            if (cb.Data.StartsWith("alert_back:", StringComparison.Ordinal))
+            {
+                int originId = int.Parse(cb.Data.Split(':')[1]);
+
+                if (_cache.TryGetValue($"album_{chatId}", out List<int>? alb))
+                    foreach (var id in alb)
+                        await SafeDelete(Client, chatId, id, ct);
+
+                if (_cache.TryGetValue($"text_{chatId}", out int detTxt))
+                    await SafeDelete(Client, chatId, detTxt, ct);
+
+                await Client.AnswerCallbackQuery(cb.Id, cancellationToken: ct);
+                return;
+            }
+
             if (cb.Data == "menu_active")
             {
                 if (_cache.TryGetValue($"menu_{chatId}", out int oldMenu))
@@ -644,10 +689,17 @@ namespace Relict_TelegramBot_Stride.BotControllers
             if (_cache.TryGetValue($"text_{chatId}", out int oldTxt))
                 await SafeDelete(Client, chatId, oldTxt, ct);
 
-            if (cb.Data!.StartsWith("report:", StringComparison.Ordinal))
+            if (cb.Data.StartsWith("report:", StringComparison.Ordinal))
             {
-                var alertId = int.Parse(cb.Data.Split(':')[1]);
-                var sess = new ReportSession { AlertId = alertId };
+                var parts = cb.Data.Split(':');           
+                int alertId = int.Parse(parts[1]);
+                int origin = parts.Length > 2 ? int.Parse(parts[2]) : -1;
+
+                var sess = new ReportSession
+                {
+                    AlertId = alertId,
+                    OriginMessageId = origin
+                };
                 _reports[chatId] = sess;
 
                 await Client.SendMessage(
@@ -746,6 +798,28 @@ namespace Relict_TelegramBot_Stride.BotControllers
         }
 
 
+        private async Task ShowSingleAlert(long chatId, AlertResponse a, int originId, CancellationToken ct)
+        {
+            var album = await Client.SendMediaGroup(
+                chatId,
+                new[]
+                {
+            new InputMediaPhoto(Base64ToInput(a.Victim?.VictimPhoto,    "victim.jpg")),
+            new InputMediaPhoto(Base64ToInput(a.Abductor?.AbductorPhoto,"abductor.jpg"))
+                },
+                cancellationToken: ct);
+
+            var txt = await Client.SendMessage(
+                chatId,
+                BuildCaption(a),
+                parseMode: ParseMode.Markdown,
+                replyMarkup: InlineMenus.DetailNav(a.AlertId, originId),
+                cancellationToken: ct);
+
+            _cache.Set($"album_{chatId}", album.Select(m => m.MessageId).ToList());
+            _cache.Set($"text_{chatId}", txt.MessageId);
+        }
+
 
         private static InputFile Base64ToInput(string? b64, string fileName)
         {
@@ -821,15 +895,15 @@ namespace Relict_TelegramBot_Stride.BotControllers
             return sb.ToString();
         }
 
-        
-
-        public async Task SendMessageAsync(long chatId, string text)
+        public async Task SendAlertNotification(long chatId, int alertId, string text)
         {
             await Client.SendMessage(
-                 chatId: chatId,
-                 text: text,
-                 parseMode: Telegram.Bot.Types.Enums.ParseMode.Markdown
-             );
+                chatId,
+                text,
+                replyMarkup: new InlineKeyboardMarkup(
+                    InlineKeyboardButton.WithCallbackData("ℹ️ Детальніше", $"alert_detail:{alertId}")),
+                parseMode: ParseMode.Markdown
+                );
         }
     }
 }

@@ -18,6 +18,7 @@ namespace Relict_TelegramBot_Stride.Models
     public class ReportSession
     {
         public int AlertId { get; init; }
+        public int? OriginMessageId { get; set; }
 
         public bool? IsAnonymous { get; set; }
         public string? CitizenName { get; set; }

@@ -77,6 +77,19 @@ namespace Relict_TelegramBot_Stride.MenuButtons
                 InlineKeyboardButton.WithCallbackData("📢 Повідомити інформацію", $"report:{alertId}")
             });
 
+        public static InlineKeyboardMarkup DetailNav(int alertId, int originMsgId) =>
+            new(new[]
+            {
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData("⬅️ Назад", $"alert_back:{originMsgId}")
+                },
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData("📢 Повідомити інформацію", $"report:{alertId}:{originMsgId}")
+                }
+            });
+
         public static InlineKeyboardMarkup AnonChoice() =>
             new(new[]
             {

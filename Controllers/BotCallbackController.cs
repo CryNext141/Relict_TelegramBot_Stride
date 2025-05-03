@@ -18,7 +18,7 @@ namespace Relict_TelegramBot_Stride.Controllers
         [HttpPost("send")]
         public async Task<IActionResult> Send([FromBody] SendMessageDto dto)
         {
-            await Task.Run(() => _botService.SendMessageAsync(dto.ChatId, dto.Text));
+            await _botService.SendAlertNotification(dto.ChatId, dto.AlertId, dto.Text);
             return Ok(new { message = "Sent" });
         }
     }
