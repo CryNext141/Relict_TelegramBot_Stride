@@ -19,7 +19,8 @@ namespace Relict_TelegramBot_Stride.Models
     {
         public int AlertId { get; init; }
         public int? OriginMessageId { get; set; }
-
+        public bool FromPush { get; set; }
+        public List<int> MessageIdsToCleanup { get; set; } = new List<int>();
         public bool? IsAnonymous { get; set; }
         public string? CitizenName { get; set; }
         public string? CitizenContactPhone { get; set; }

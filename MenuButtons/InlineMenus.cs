@@ -40,7 +40,7 @@ namespace Relict_TelegramBot_Stride.MenuButtons
             }
             });
 
-        public static InlineKeyboardMarkup NavWithReport(int alertId, int totalAlerts)
+        public static InlineKeyboardMarkup NavWithReport(int alertId, int originId, int totalAlerts)
         {
             if (totalAlerts > 1)
             {
@@ -54,7 +54,7 @@ namespace Relict_TelegramBot_Stride.MenuButtons
                     },
                     new[]
                     {
-                        InlineKeyboardButton.WithCallbackData("📢 Повідомити інформацію", $"report:{alertId}")
+                        InlineKeyboardButton.WithCallbackData("📢 Повідомити інформацію", $"report:{alertId}:{originId}:a")
                     }
                 });
             }
@@ -77,16 +77,16 @@ namespace Relict_TelegramBot_Stride.MenuButtons
                 InlineKeyboardButton.WithCallbackData("📢 Повідомити інформацію", $"report:{alertId}")
             });
 
-        public static InlineKeyboardMarkup DetailNav(int alertId, int originMsgId) =>
+        public static InlineKeyboardMarkup DetailNav(int alertId, int originId) =>
             new(new[]
             {
                 new[]
                 {
-                    InlineKeyboardButton.WithCallbackData("⬅️ Назад", $"alert_back:{originMsgId}")
+                    InlineKeyboardButton.WithCallbackData("⬅️ Назад", $"alert_back:{originId}")
                 },
                 new[]
                 {
-                    InlineKeyboardButton.WithCallbackData("📢 Повідомити інформацію", $"report:{alertId}:{originMsgId}")
+                    InlineKeyboardButton.WithCallbackData("📢 Повідомити інформацію", $"report:{alertId}:{originId}:p")
                 }
             });
 
