@@ -960,9 +960,10 @@ namespace Relict_TelegramBot_Stride.BotControllers
 
         public async Task SendAlertNotification(long chatId, int alertId, string text)
         {
+            string finalText = $"🚨 {text}";
             await Client.SendMessage(
                 chatId,
-                text,
+                finalText,
                 replyMarkup: new InlineKeyboardMarkup(
                     InlineKeyboardButton.WithCallbackData("ℹ️ Детальніше", $"alert_detail:{alertId}")),
                 parseMode: ParseMode.Markdown
