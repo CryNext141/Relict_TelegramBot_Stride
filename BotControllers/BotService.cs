@@ -144,9 +144,16 @@ namespace Relict_TelegramBot_Stride.BotControllers
                 })
             { OneTimeKeyboard = true, ResizeKeyboard = true };
 
-            await Client.SendMessage(chatId,
-                "Номер телефону (+380…):",
-                replyMarkup: kb, cancellationToken: ct);
+            var q = await Client.SendMessage(chatId,
+             "Номер телефону (+380…):",
+             replyMarkup: kb, cancellationToken: ct);
+
+            if (_reports.TryGetValue(chatId, out var sess))
+            {
+                sess.MessageIdsToCleanup.Add(q.MessageId);
+            }
+
+
         }
 
         private async Task AskLocation(long chatId, CancellationToken ct)
@@ -159,9 +166,15 @@ namespace Relict_TelegramBot_Stride.BotControllers
                 })
             { OneTimeKeyboard = true, ResizeKeyboard = true };
 
-            await Client.SendMessage(chatId,
+            var q = await Client.SendMessage(chatId,
                 "Введіть місце події або надішліть геолокацію:",
                 replyMarkup: kb, cancellationToken: ct);
+
+            if (_reports.TryGetValue(chatId, out var sess))
+            {
+                sess.MessageIdsToCleanup.Add(q.MessageId);
+            }
+
         }
 
         private InlineKeyboardMarkup BuildRegionsKeyboard(IReadOnlyList<RegionDto> regions, SubSession s)
@@ -244,9 +257,25 @@ namespace Relict_TelegramBot_Stride.BotControllers
 
             if (msg.Text is "❌ Скасувати")
             {
-                _subs.TryRemove(chatId, out _);
-                await Client.SendMessage(chatId, "Підписку скасовано.", cancellationToken: ct);
-                await HandleCallback(new CallbackQuery { Message = msg, Data = "menu" }, ct, false);
+                ReportSession? sessionToCancel = null;
+
+                if (_reports.TryGetValue(chatId, out sessionToCancel))
+                {
+                    await CleanupKeyboardMessages(chatId, sessionToCancel.MessageIdsToCleanup, ct);
+                }
+
+                _reports.TryRemove(chatId, out _);
+                await Client.SendMessage(chatId, "Заповнення скасоване.",
+                             replyMarkup: new ReplyKeyboardRemove(),
+                             cancellationToken: ct);
+
+
+                string back = sessionToCancel?.FromPush == true
+                      ? $"alert_back:{sessionToCancel.OriginMessageId}"
+                      : "menu_active";
+
+                await HandleCallback(new CallbackQuery { Message = msg, Data = back }, ct, false);
+
                 return;
             }
 
@@ -258,9 +287,9 @@ namespace Relict_TelegramBot_Stride.BotControllers
 
             if (txt == "❌ Скасувати")
             {
-                _reports.TryRemove(chatId, out _);
-                await Client.SendMessage(chatId, "Заповнення скасоване.", cancellationToken: ct);
-                await HandleCallback(new CallbackQuery { Message = msg, Data = "menu_active" }, ct, false);
+                _subs.TryRemove(chatId, out _);
+                await Client.SendMessage(chatId, "Підписку скасовано.", cancellationToken: ct);
+                await HandleCallback(new CallbackQuery { Message = msg, Data = "menu" }, ct, false);
                 return;
             }
 
@@ -310,10 +339,10 @@ namespace Relict_TelegramBot_Stride.BotControllers
                          replyMarkup: new ReplyKeyboardRemove(),
                          cancellationToken: ct);
 
-                    await Client.SendMessage(chatId,
-                                             "Опишіть, що ви бачили:",
-                                             replyMarkup: InlineMenus.BackCancel(),
-                                             cancellationToken: ct);
+                    var q3 = await Client.SendMessage(chatId,
+                    "Опишіть, що ви бачили:",
+                    replyMarkup: InlineMenus.BackCancel(), cancellationToken: ct);
+                    sess.MessageIdsToCleanup.Add(q3.MessageId);
                     break;
 
                 case ReportStep.AskDescription:
@@ -342,29 +371,20 @@ namespace Relict_TelegramBot_Stride.BotControllers
 
                     var ok = await _api.PostCitizenReportAsync(sess.AlertId, payload, ct);
 
-                    await Client.SendMessage(chatId,
-                        ok ? "✅ Дякуємо! Інформацію надіслано." : "⚠️ Сталася помилка, спробуйте пізніше.",
-                        replyMarkup: new ReplyKeyboardRemove(),
-                        cancellationToken: ct);
+                    await CleanupKeyboardMessages(chatId, sess.MessageIdsToCleanup, ct);
+                    _reports.TryRemove(chatId, out _);
+
+                    var conf = await Client.SendMessage(chatId,
+                           ok ? "✅ Дякуємо! Інформацію надіслано."
+                              : "⚠️ Не вдалося надіслати інформацію.",
+                           replyMarkup: new ReplyKeyboardRemove(),
+                           cancellationToken: ct);
 
                     _reports.TryRemove(chatId, out _);
 
-                    int originId = sess.OriginMessageId ?? -1;
-
-
-                    if (originId > 0)
-                    {
-                        await HandleCallback(new CallbackQuery { Message = msg, Data = "menu" }, ct, false);
-                    }
-                    else
-                    {
-                        await HandleCallback(new CallbackQuery
-                        {
-                            Message = msg,
-                            Data = "menu_active",
-                            Id = Guid.NewGuid().ToString()
-                        }, ct, answer: false);
-                    }
+                    await HandleCallback(
+                        new CallbackQuery { Message = conf, Data = "menu", Id = Guid.NewGuid().ToString() },
+                        ct, answer: false);
 
                     break;
             }
@@ -379,6 +399,7 @@ namespace Relict_TelegramBot_Stride.BotControllers
             }
 
             var chatId = cb.Message!.Chat.Id;
+            var messageId = cb.Message.MessageId;
 
             if (cb.Data == "menu")
             {
@@ -632,12 +653,16 @@ namespace Relict_TelegramBot_Stride.BotControllers
             {
                 int originId = int.Parse(cb.Data.Split(':')[1]);
 
+               
+
                 if (_cache.TryGetValue($"album_{chatId}", out List<int>? alb))
                     foreach (var id in alb)
-                        await SafeDelete(Client, chatId, id, ct);
+                        if (id != originId)
+                            await SafeDelete(Client, chatId, id, ct);
 
                 if (_cache.TryGetValue($"text_{chatId}", out int detTxt))
-                    await SafeDelete(Client, chatId, detTxt, ct);
+                    if (detTxt != originId)
+                        await SafeDelete(Client, chatId, detTxt, ct);
 
                 await Client.AnswerCallbackQuery(cb.Id, cancellationToken: ct);
                 return;
@@ -691,22 +716,35 @@ namespace Relict_TelegramBot_Stride.BotControllers
 
             if (cb.Data.StartsWith("report:", StringComparison.Ordinal))
             {
-                var parts = cb.Data.Split(':');           
+                if (_reports.ContainsKey(chatId))
+                {
+                    if (answer && !string.IsNullOrEmpty(cb.Id)) await SafeAnswerCallbackQuery(cb.Id, ct, "Ви вже заповнюєте репорт. Завершіть або скасуйте поточний.", showAlert: true);
+                    return;
+                }
+
+                _reports.TryRemove(chatId, out _);
+
+                var parts = cb.Data.Split(':');       
                 int alertId = int.Parse(parts[1]);
-                int origin = parts.Length > 2 ? int.Parse(parts[2]) : -1;
+                int origin = int.Parse(parts[2]);
+                bool fromPush = parts.Length > 3 && parts[3] == "p";
 
                 var sess = new ReportSession
                 {
                     AlertId = alertId,
-                    OriginMessageId = origin
+                    OriginMessageId = origin,
+                    FromPush = fromPush,
+                    MessageIdsToCleanup = new()
                 };
                 _reports[chatId] = sess;
 
-                await Client.SendMessage(
+                var questionMsg = await Client.SendMessage(
                     chatId,
                     "Бажаєте залишитись анонімним?",
                     replyMarkup: InlineMenus.AnonChoice(),
                     cancellationToken: ct);
+
+                sess.MessageIdsToCleanup.Add(questionMsg.MessageId);
 
                 await Client.AnswerCallbackQuery(cb.Id, cancellationToken: ct);
                 return;
@@ -716,29 +754,63 @@ namespace Relict_TelegramBot_Stride.BotControllers
             {
                 if (!_reports.TryGetValue(chatId, out var sess)) return;
 
+                await SafeDelete(Client, chatId, cb.Message!.MessageId, ct);
+
                 sess.IsAnonymous = cb.Data.EndsWith("yes");
                 sess.History.Push(ReportStep.ChooseAnon);
+
+                Message? sentMessage = null;
 
                 if (sess.IsAnonymous == true)
                 {
                     sess.Step = ReportStep.AskDescription;
-                    await Client.SendMessage(
-                        chatId,
-                        "Опишіть, що ви бачили:",
-                        replyMarkup: InlineMenus.BackCancel(),
-                        cancellationToken: ct);
+                    sentMessage = await Client.SendMessage(chatId,
+                    "Опишіть, що ви бачили:",
+                    replyMarkup: InlineMenus.BackCancel(), cancellationToken: ct);
+
+                    sess.MessageIdsToCleanup.Add(sentMessage.MessageId);
+
                 }
                 else
                 {
                     sess.Step = ReportStep.AskName;
-                    await Client.SendMessage(
-                        chatId,
-                        "Ваше ім’я:",
-                        replyMarkup: InlineMenus.BackCancel(),
-                        cancellationToken: ct);
+                    sentMessage = await Client.SendMessage(chatId,
+                    "Ваше ім’я:",
+                    replyMarkup: InlineMenus.BackCancel(), cancellationToken: ct);
+                    sess.MessageIdsToCleanup.Add(sentMessage.MessageId);
+
+
+                }
+
+                if (sentMessage != null)
+                {
+                    sess.MessageIdsToCleanup.Add(sentMessage.MessageId);
                 }
 
                 await Client.AnswerCallbackQuery(cb.Id, cancellationToken: ct);
+                return;
+            }
+
+            if (cb.Data == "rep_cancel")
+            {
+                if (_reports.TryRemove(chatId, out var toCancel))
+                    await CleanupKeyboardMessages(chatId, toCancel.MessageIdsToCleanup, ct);
+
+                await SafeDelete(Client, chatId, cb.Message!.MessageId, ct);
+
+                await Client.SendMessage(chatId, "Заповнення скасоване.",
+                    replyMarkup: new ReplyKeyboardRemove(), cancellationToken: ct);
+
+                int origin = toCancel?.OriginMessageId ?? -1;
+
+                string back = toCancel?.FromPush == true
+                      ? $"alert_back:{toCancel.OriginMessageId}"   
+                      : "menu_active";
+
+                await HandleCallback(
+                    new CallbackQuery { Message = cb.Message, Data = back },
+                    ct, answer: false);
+
                 return;
             }
 
@@ -752,41 +824,32 @@ namespace Relict_TelegramBot_Stride.BotControllers
                 switch (sess.Step)
                 {
                     case ReportStep.ChooseAnon:
-                        await Client.SendMessage(
+                        var q0 = await Client.SendMessage(
                             chatId, "Бажаєте залишитись анонімним?",
                             replyMarkup: InlineMenus.AnonChoice(), cancellationToken: ct);
+                        sess.MessageIdsToCleanup.Add(q0.MessageId);
                         break;
                     case ReportStep.AskName:
-                        await Client.SendMessage(chatId, "Ваше ім’я:",
-                            replyMarkup: InlineMenus.BackCancel(), cancellationToken: ct);
+                        var q1 = await Client.SendMessage(chatId,
+                        "Ваше ім’я:",
+                        replyMarkup: InlineMenus.BackCancel(), cancellationToken: ct);
+                        sess.MessageIdsToCleanup.Add(q1.MessageId);
                         break;
                     case ReportStep.AskPhone:
                         await AskPhone(chatId, ct);
                         break;
                     case ReportStep.AskDescription:
-                        await Client.SendMessage(chatId, "Опишіть, що ви бачили:",
-                            replyMarkup: InlineMenus.BackCancel(), cancellationToken: ct);
+                        var q3 = await Client.SendMessage(chatId,
+                        "Опишіть, що ви бачили:",
+                        replyMarkup: InlineMenus.BackCancel(), cancellationToken: ct);
+                        sess.MessageIdsToCleanup.Add(q3.MessageId);
                         break;
                     case ReportStep.AskLocation:
                         await AskLocation(chatId, ct);
                         break;
                 }
 
-                if (cb.Data == "rep_cancel")
-                {
-                    _reports.TryRemove(chatId, out _);
 
-                    await Client.SendMessage(chatId,
-                        "Заповнення скасоване.",
-                        cancellationToken: ct);
-
-                    await HandleCallback(
-                        new CallbackQuery { Message = cb.Message, Data = "menu_active" },
-                        ct,
-                        answer: false);
-
-                    return;
-                }
 
                 await Client.AnswerCallbackQuery(cb.Id, cancellationToken: ct);
                 return;
@@ -838,17 +901,17 @@ namespace Relict_TelegramBot_Stride.BotControllers
                 chatId,
                 new[]
                 {
-                    new InputMediaPhoto(Base64ToInput(a.Victim?.VictimPhoto,   "victim.jpg")),
+                    new InputMediaPhoto(Base64ToInput(a.Victim?.VictimPhoto,"victim.jpg")),
                     new InputMediaPhoto(Base64ToInput(a.Abductor?.AbductorPhoto,"abductor.jpg"))
                 },
                 cancellationToken: ct);
 
-            var txt = await Client.SendMessage(
-                chatId,
-                caption,
+            var txt = await Client.SendMessage(chatId, caption,
                 parseMode: ParseMode.Markdown,
-                replyMarkup: InlineMenus.NavWithReport(a.AlertId, totalAlerts),
-                cancellationToken: ct);
+                 cancellationToken: ct);
+
+            await Client.EditMessageReplyMarkup(chatId, txt.MessageId,
+                replyMarkup: InlineMenus.NavWithReport(a.AlertId, txt.MessageId, totalAlerts), cancellationToken: ct);
 
             _cache.Set($"album_{chatId}", albumMsg.Select(m => m.MessageId).ToList());
             _cache.Set($"text_{chatId}", txt.MessageId);
@@ -863,7 +926,7 @@ namespace Relict_TelegramBot_Stride.BotControllers
 
             sb.AppendLine($"*Алерт #{a.AlertId}* `{a.AlertStatus}`");
             sb.AppendLine($"📅 {a.CrimeDate?.Date ?? "??.??.????"}  ⏰ {a.CrimeDate?.Time ?? "--:--"}");
-            sb.AppendLine($"📍 {a.CrimeDistrict}, {a.CrimeLocation}");
+            sb.AppendLine($"📍 {Map(RegionUa, a.CrimeDistrict)}, {a.CrimeLocation}");
             sb.AppendLine();
 
             if (a.Victim is { } v)
@@ -890,20 +953,65 @@ namespace Relict_TelegramBot_Stride.BotControllers
                 sb.AppendLine($"• Одяг: {ab.AbductorClothing ?? "Невідомо"}");
                 sb.AppendLine($"• Особливі прикмети: {ab.AbductorDistinctiveFeatures ?? "—"}");
                 sb.AppendLine($"• Транспорт: {ab.AbductorVehicle ?? "Невідомо"}");
+                sb.AppendLine();
             }
+
+            sb.AppendLine("❗Якщо Вам відома якась інформація повідомляйте за номером:\r\n000-000-00\r\nАбо повідомляйте напряму в чат-боті!");
 
             return sb.ToString();
         }
 
         public async Task SendAlertNotification(long chatId, int alertId, string text)
         {
+            string finalText = $"🚨 {text}";
             await Client.SendMessage(
                 chatId,
-                text,
+                finalText,
                 replyMarkup: new InlineKeyboardMarkup(
                     InlineKeyboardButton.WithCallbackData("ℹ️ Детальніше", $"alert_detail:{alertId}")),
                 parseMode: ParseMode.Markdown
                 );
+        }
+
+        private async Task CleanupKeyboardMessages(long chatId, IEnumerable<int> messageIds, CancellationToken ct)
+        {
+            if (messageIds == null) return;
+
+            foreach (var messageId in messageIds)
+            {
+                try
+                {
+                    await Client.EditMessageReplyMarkup(chatId, messageId, replyMarkup: null, cancellationToken: ct);
+                }
+                catch (ApiRequestException ex) when (ex.ErrorCode == 400 &&
+                                                     (ex.Message.Contains("message is not modified") || ex.Message.Contains("message can't be edited") || ex.Message.Contains("message to edit not found")))
+                {
+                }
+                catch (Exception ex)
+                {
+
+
+                    Console.WriteLine($"[Cleanup Error] Chat: {chatId}, Msg: {messageId}. Failed to edit reply markup: {ex.Message}");
+                }
+            }
+        }
+
+
+        private async Task SafeAnswerCallbackQuery(string callbackQueryId, CancellationToken ct, string? text = null, bool showAlert = false)
+        {
+            if (string.IsNullOrEmpty(callbackQueryId)) return;
+            try
+            {
+                await Client.AnswerCallbackQuery(callbackQueryId, text, showAlert, cancellationToken: ct);
+            }
+            catch (ApiRequestException ex) when (ex.ErrorCode == 400 && ex.Message.Contains("query is too old"))
+            {
+                Console.WriteLine($"[SafeAnswerCallback] Query {callbackQueryId} is too old.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[SafeAnswerCallback] Error answering query {callbackQueryId}: {ex.Message}");
+            }
         }
     }
 }
