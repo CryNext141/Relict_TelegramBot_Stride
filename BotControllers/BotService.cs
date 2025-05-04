@@ -926,7 +926,7 @@ namespace Relict_TelegramBot_Stride.BotControllers
 
             sb.AppendLine($"*Алерт #{a.AlertId}* `{a.AlertStatus}`");
             sb.AppendLine($"📅 {a.CrimeDate?.Date ?? "??.??.????"}  ⏰ {a.CrimeDate?.Time ?? "--:--"}");
-            sb.AppendLine($"📍 {a.CrimeDistrict}, {a.CrimeLocation}");
+            sb.AppendLine($"📍 {Map(RegionUa, a.CrimeDistrict)}, {a.CrimeLocation}");
             sb.AppendLine();
 
             if (a.Victim is { } v)
@@ -953,7 +953,10 @@ namespace Relict_TelegramBot_Stride.BotControllers
                 sb.AppendLine($"• Одяг: {ab.AbductorClothing ?? "Невідомо"}");
                 sb.AppendLine($"• Особливі прикмети: {ab.AbductorDistinctiveFeatures ?? "—"}");
                 sb.AppendLine($"• Транспорт: {ab.AbductorVehicle ?? "Невідомо"}");
+                sb.AppendLine();
             }
+
+            sb.AppendLine("❗Якщо Вам відома якась інформація повідомляйте за номером:\r\n000-000-00\r\nАбо повідомляйте напряму в чат-боті!");
 
             return sb.ToString();
         }
