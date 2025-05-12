@@ -47,45 +47,13 @@ namespace Relict_TelegramBot_Stride.BotControllers
         };
         private static readonly Dictionary<string, string> SkinUa = new()
         {
-            ["Light"] = "Світлий",
-            ["Medium"] = "Середній",
-            ["Dark"] = "Темний",
-            ["Unknown"] = "Невідомий"
+            ["White"] = "Біла",
+            ["Brown"] = "Смуглява",
+            ["Black"] = "Чорна",
+            ["Unknown"] = "Невідомо"
         };
 
-        private static readonly Dictionary<string, string> RegionUa = new()
-        {
-            ["Kyiv"] = "Київ",
-            ["Kharkiv"] = "Харків",
-            ["Odesa"] = "Одеса",
-            ["Dnipro"] = "Дніпро",
-            ["Donetsk"] = "Донецьк",
-            ["Lviv"] = "Львів",
-            ["Zaporizhzhia"] = "Запоріжжя",
-            ["Kryvyi Rih"] = "Кривий Ріг",
-            ["Mykolaiv"] = "Миколаїв",
-            ["Mariupol"] = "Маріуполь",
-            ["Luhansk"] = "Луганськ",
-            ["Vinnytsia"] = "Вінниця",
-            ["Sevastopol"] = "Севастополь",
-            ["Simferopol"] = "Сімферополь",
-            ["Kherson"] = "Херсон",
-            ["Poltava"] = "Полтава",
-            ["Chernihiv"] = "Чернігів",
-            ["Cherkasy"] = "Черкаси",
-            ["Zhytomyr"] = "Житомир",
-            ["Sumy"] = "Суми",
-            ["Khmelnytskyi"] = "Хмельницький",
-            ["Chernivtsi"] = "Чернівці",
-            ["Rivne"] = "Рівне",
-            ["Ivano-Frankivsk"] = "Івано-Франківськ",
-            ["Kropyvnytskyi"] = "Кропивницький",
-            ["Kamianske"] = "Кам'янське",
-            ["Lutsk"] = "Луцьк",
-            ["Kremenchuk"] = "Кременчук",
-            ["Bila Tserkva"] = "Біла Церква",
-            ["Melitopol"] = "Мелітополь"
-        };
+        
 
         public async Task HandleUpdate(Update update, CancellationToken ct)
         {
@@ -191,12 +159,11 @@ namespace Relict_TelegramBot_Stride.BotControllers
                 bool add = s.Selected.Contains(r.RegionId);
                 bool chosen = orig || add;
 
-                string ua = RegionUa.TryGetValue(r.Name, out var t) ? t : r.Name;
                 string mark = chosen ? "✅" : "☑️";
 
                 rows.Add(new[]
                 {
-                    InlineKeyboardButton.WithCallbackData($"{mark} {ua}", $"reg_sel:{r.RegionId}")
+                    InlineKeyboardButton.WithCallbackData($"{mark} {r.Name}", $"reg_sel:{r.RegionId}")
                 });
             }
 
@@ -226,10 +193,9 @@ namespace Relict_TelegramBot_Stride.BotControllers
             foreach (var r in page)
             {
                 bool chosen = s.Selected.Contains(r.RegionId);
-                string ua = RegionUa.TryGetValue(r.Name, out var t) ? t : r.Name;
                 rows.Add(new[]
                 {
-                    InlineKeyboardButton.WithCallbackData($"{(chosen ? "✅" : "☑️")} {ua}", $"my_sel:{r.RegionId}")
+                    InlineKeyboardButton.WithCallbackData($"{(chosen ? "✅" : "☑️")} {r.Name}", $"my_sel:{r.RegionId}")
                 });
             }
 
@@ -926,7 +892,7 @@ namespace Relict_TelegramBot_Stride.BotControllers
 
             sb.AppendLine($"*Алерт #{a.AlertId}* `{a.AlertStatus}`");
             sb.AppendLine($"📅 {a.CrimeDate?.Date ?? "??.??.????"}  ⏰ {a.CrimeDate?.Time ?? "--:--"}");
-            sb.AppendLine($"📍 {Map(RegionUa, a.CrimeDistrict)}, {a.CrimeLocation}");
+            sb.AppendLine($"📍 {a.CrimeDistrict}, {a.CrimeLocation}");
             sb.AppendLine();
 
             if (a.Victim is { } v)
@@ -946,7 +912,7 @@ namespace Relict_TelegramBot_Stride.BotControllers
             {
                 sb.AppendLine("*👤 Викрадач*");
                 sb.AppendLine($"• Ім’я: {ab.AbductorName ?? "Невідомо"}");
-                sb.AppendLine($"• Вік: {ab.AbductorAge}");
+                sb.AppendLine($"• Вік:  {(ab.AbductorAge == 0 ? "Невідомо" : ab.AbductorAge.ToString())}");
                 sb.AppendLine($"• Стать: {Map(GenderUa, ab.AbductorGender)}");
                 sb.AppendLine($"• Колір шкіри: {Map(SkinUa, ab.AbductorSkinColor)}");
                 sb.AppendLine($"• Волосся: {ab.AbductorHair ?? "Невідомо"}");
@@ -956,14 +922,14 @@ namespace Relict_TelegramBot_Stride.BotControllers
                 sb.AppendLine();
             }
 
-            sb.AppendLine("❗Якщо Вам відома якась інформація повідомляйте за номером:\r\n000-000-00\r\nАбо повідомляйте напряму в чат-боті!");
+            sb.AppendLine("❗Якщо Вам відома якась інформація повідомляйте за номером:\r\n000-000-00\r\n❗Або повідомляйте напряму в чат-боті!");
 
             return sb.ToString();
         }
 
         public async Task SendAlertNotification(long chatId, int alertId, string text)
         {
-            string finalText = $"🚨 {text}";
+            string finalText = $"🚨 *Алерт #{alertId}* \r\n{text}";
             await Client.SendMessage(
                 chatId,
                 finalText,
