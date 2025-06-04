@@ -5,10 +5,25 @@ namespace Relict_TelegramBot_Stride.MenuButtons
     public static class InlineMenus
     {
         public static InlineKeyboardMarkup MainMenu() =>
-            new(
+            /*new(
                 InlineKeyboardButton.WithCallbackData("🟢 Активні алерти", "menu_active"),
                 InlineKeyboardButton.WithCallbackData("🔔 Підписка", "sub")
-             );
+            );*/
+       
+            new(new[]
+            {
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData("🟢 Активні алерти", "menu_active"),
+                    InlineKeyboardButton.WithCallbackData("🔔 Підписка", "sub")
+                },
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData("ℹ️ Що вміє цей бот?", "about_bot")
+                }
+            });
+
+
 
         public static InlineKeyboardMarkup SubMenu() =>
             new(new[]
@@ -35,7 +50,7 @@ namespace Relict_TelegramBot_Stride.MenuButtons
             new[]
             {
                 InlineKeyboardButton.WithCallbackData("◀️", "prev"),
-                InlineKeyboardButton.WithCallbackData("🏠", "menu"),
+                InlineKeyboardButton.WithCallbackData("🏠 На головну", "menu"),
                 InlineKeyboardButton.WithCallbackData("▶️", "next")
             }
             });
@@ -49,7 +64,7 @@ namespace Relict_TelegramBot_Stride.MenuButtons
                     new []
                     {
                         InlineKeyboardButton.WithCallbackData("◀️", "prev"),
-                        InlineKeyboardButton.WithCallbackData("🏠", "menu"),
+                        InlineKeyboardButton.WithCallbackData("🏠 На головну", "menu"),
                         InlineKeyboardButton.WithCallbackData("▶️", "next")
                     },
                     new[]
@@ -64,18 +79,39 @@ namespace Relict_TelegramBot_Stride.MenuButtons
                 {
                     new []
                     {
-                        InlineKeyboardButton.WithCallbackData("🏠", "menu"),
+                        InlineKeyboardButton.WithCallbackData("🏠 На головну", "menu"),
                         InlineKeyboardButton.WithCallbackData("📢 Повідомити інформацію", $"report:{alertId}")
                     }
                 });
             }
         }
 
+        public static InlineKeyboardMarkup AboutNav() =>
+            new(new[]
+            {
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData("⬅️ Назад", "menu"),
+                    InlineKeyboardButton.WithCallbackData("❓ FAQ", "faq_page")
+                }
+            });
+
+        public static InlineKeyboardMarkup FaqNav() =>
+            new(new[]
+            {
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData("⬅️ Назад", "about_bot"),
+                    InlineKeyboardButton.WithCallbackData("🏠 На головну", "menu")
+                }
+            });
+
         public static InlineKeyboardMarkup ReportStart(int alertId) =>
             new(new[]
             {
                 InlineKeyboardButton.WithCallbackData("📢 Повідомити інформацію", $"report:{alertId}")
             });
+
 
         public static InlineKeyboardMarkup DetailNav(int alertId, int originId) =>
             new(new[]
