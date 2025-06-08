@@ -80,7 +80,7 @@ namespace Relict_TelegramBot_Stride.MenuButtons
                     new []
                     {
                         InlineKeyboardButton.WithCallbackData("🏠 На головну", "menu"),
-                        InlineKeyboardButton.WithCallbackData("📢 Повідомити інформацію", $"report:{alertId}")
+                        InlineKeyboardButton.WithCallbackData("📢 Повідомити інформацію", $"report:{alertId}:{originId}:a")
                     }
                 });
             }
