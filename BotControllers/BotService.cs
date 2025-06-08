@@ -31,6 +31,8 @@ namespace Relict_TelegramBot_Stride.BotControllers
         private readonly ConcurrentDictionary<long, SubSession> _subs = new();
         private readonly ConcurrentDictionary<long, MySession> _my = new();
 
+
+
         public BotService(IConfiguration cfg, AlertApi api, NotificationsApi notificationsApi, IMemoryCache cache)
         {
             Client = new TelegramBotClient(cfg["Telegram:BotToken"]!);
@@ -63,8 +65,8 @@ namespace Relict_TelegramBot_Stride.BotControllers
                     {
                         var chatId = m.Chat.Id;
 
-                        if (_cache.TryGetValue($"menu_{chatId}", out int oldMenu))
-                            await SafeDelete(Client, chatId, oldMenu, ct);
+                        if (_cache.TryGetValue($"menu_{chatId}", out int oldMenuRestart))
+                            await SafeDelete(Client, chatId, oldMenuRestart, ct);
 
                         var menu = await Client.SendMessage(
                             chatId,
@@ -74,6 +76,23 @@ namespace Relict_TelegramBot_Stride.BotControllers
 
                         _cache.Set($"menu_{chatId}", menu.MessageId);
                         return;
+                    }
+
+                case { Message: { Text: "/exit" } m }:
+                    await HandleCallback(new CallbackQuery { Message = m, Data = "menu" }, ct, false);
+                    break;
+
+                case { Message: { Text: "/restart" } m }:
+                    {
+                        var chatId = m.Chat.Id;
+                        ResetUserState(chatId);
+                        var restartMsg = await Client.SendMessage(
+                            chatId,
+                            "Бот перезапущено.\n\nГоловне меню:",
+                            replyMarkup: InlineMenus.MainMenu(),
+                            cancellationToken: ct);
+                        _cache.Set($"menu_{chatId}", restartMsg.MessageId);
+                        break;
                     }
 
                 case { CallbackQuery: { } cb }:
@@ -1070,6 +1089,20 @@ namespace Relict_TelegramBot_Stride.BotControllers
             {
                 Console.WriteLine($"[SafeAnswerCallback] Error answering query {callbackQueryId}: {ex.Message}");
             }
+        }
+
+        private void ResetUserState(long chatId)
+        {
+            _positions.TryRemove(chatId, out _);
+            _reports.TryRemove(chatId, out _);
+            _subs.TryRemove(chatId, out _);
+            _my.TryRemove(chatId, out _);
+            _cache.Remove($"menu_{chatId}");
+            _cache.Remove($"album_{chatId}");
+            _cache.Remove($"text_{chatId}");
+            _cache.Remove($"alerts_{chatId}");
+            _cache.Remove($"about_{chatId}");
+            _cache.Remove($"faq_{chatId}");
         }
 
         private readonly string faqText = 

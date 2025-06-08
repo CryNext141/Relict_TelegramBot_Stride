@@ -2,6 +2,9 @@
 using Microsoft.Extensions.DependencyInjection;
 using Relict_TelegramBot_Stride.BotControllers;
 using Relict_TelegramBot_Stride.Models;
+using Telegram.Bot;
+
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -23,8 +26,16 @@ builder.Services.AddHostedService<BotHostedService>();
 
 builder.Services.AddControllers();
 
-var app = builder.Build();
+var Client = new TelegramBotClient(builder.Configuration["Telegram:BotToken"]!);
 
+
+await Client.SetMyCommands(new[]
+{
+    new Telegram.Bot.Types.BotCommand { Command = "exit", Description = "Повернутись в головне меню" },
+    new Telegram.Bot.Types.BotCommand { Command = "restart", Description = "Перезапустити бота" }
+});
+
+var app = builder.Build();
 
 app.MapControllers();
 
